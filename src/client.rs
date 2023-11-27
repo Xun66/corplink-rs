@@ -401,12 +401,21 @@ impl Client {
                 }
             }
 
+            let wifi_info = self.get_wifi_info().await;
+            if let Err(e) = wifi_info {
+                log::warn!("failed to get wifi info: {e}");
+            } else {
+                let employee = wifi_info.unwrap().employee_setting;
+                log::info!("wifi info: {}:{}", employee.account, employee.password);
+            }
+
             if let Some(code) = &self.conf.code {
                 if !code.is_empty() {
                     return Ok(());
                 }
             }
             log::warn!("failed to get otp code");
+
             return Ok(());
         }
         panic!("no available login method, please provide a valid platform")
@@ -461,14 +470,131 @@ impl Client {
         m.insert("user_name".to_string(), json!(&self.conf.username));
 
         let resp = self
-            .request::<RespLogin>(ApiName::LoginPassword, Some(m))
+            .request::<RespPasswordpLoginMethod>(ApiName::LoginPassword, Some(m))
+            .await?;
+
+        // Check the response code
+        if resp.code != 0 {
+            let msg = resp.message.unwrap_or_else(|| "Unknown error".to_string());
+            return Err(Error::Error(msg));
+        }
+
+        // Perform additional actions with resp.data.auth (vec)
+        // For example, store it in a variable for later use
+        let auth_vec = resp.data.unwrap().auth;
+
+        if auth_vec.contains(&"otp".to_string()) {
+            log::info!("try to login with otp");
+            // return configured otp directly if in conf
+            if self.conf.otp_uri.is_some() {
+                self.login_with_otp(platform).await?;
+                return Ok(self.conf.otp_uri.clone().unwrap());
+            }
+            log::info!("otp token not configured, try next auth method..");
+        }
+
+        for method in auth_vec {
+            match method.as_str() {
+                "mobile" => {
+                    log::info!("try to login with code from mobile");
+                    let otp_uri = self.login_with_mobile(platform).await;
+                    if let Err(e) = otp_uri {
+                        log::warn!("failed to login with mobile: {e}");
+                        continue;
+                    }
+                    // set to self.conf and then return opt_uri
+                    self.conf.otp_uri = Some(otp_uri.unwrap());
+                    return Ok(self.conf.otp_uri.clone().unwrap());
+                }
+                "otp" => {
+                    continue;
+                }
+                _ => {
+                    log::info!("unsupported method {method}, trying other methods");
+                }
+            }
+        }
+
+        return Err(Error::Error("no available login method".to_string()));
+    }
+
+    async fn request_mobile_code(&mut self, mobile: &str) -> Result<(), Error> {
+        let mut m = Map::new();
+        m.insert("forget_password".to_string(), json!(false));
+        m.insert("code_type".to_string(), json!("mobile"));
+        m.insert("user_name".to_string(), json!(&self.conf.username));
+        m.insert("platform".to_string(), json!(mobile.to_string()));
+
+        let res = self.request::<Map<String, Value>>(ApiName::RequestEmailCode, Some(m))
+            .await?;
+        match res.code {
+            0 => Ok(()),
+            _ => {
+                let msg = res.message.unwrap_or_else(|| "Unknown error".to_string());
+                return Err(Error::Error(msg));
+            }
+        }
+    }
+
+    async fn login_with_otp(&mut self, platform: &str) -> Result<String, Error> {
+        // tell server to send code to email
+        log::info!("try to login with otp for {platform}");
+
+        let mut m = Map::new();
+        m.insert("forget_password".to_string(), json!(false));
+        m.insert("code_type".to_string(), json!("otp"));
+
+        let mut otp = String::new();
+        if let Some(code) = &self.conf.code {
+            if !code.is_empty() {
+                let code = utils::b32_decode(code);
+                let offset = self.date_offset_sec / TIME_STEP as i32;
+                let raw_otp = totp_offset(code.as_slice(), offset);
+                otp = format!("{:06}", raw_otp.code);
+                log::info!(
+                    "2fa code generated: {}, {} seconds left",
+                    &otp, raw_otp.secs_left
+                );
+            }
+        }
+        m.insert("code".to_string(), json!(otp));
+
+        let resp = self
+            .request::<RespLogin>(ApiName::LoginEmail, Some(m))
             .await?;
         match resp.code {
             0 => Ok(resp.data.unwrap().url),
-            _ => {
-                let msg = resp.message.unwrap();
-                Err(Error::Error(msg))
-            }
+            _ => Err(Error::Error(format!(
+                "failed to login with otp code {}: {}",
+                otp,
+                resp.message.unwrap()
+            ))),
+        }
+    }
+
+    async fn login_with_mobile(&mut self, platform: &str) -> Result<String, Error> {
+        // tell server to send code to email
+        log::info!("try to request mobile code for {platform}");
+        self.request_mobile_code(platform).await?;
+
+        log::info!("input your mobile code from {platform}:");
+        let input = utils::read_line().await;
+        let code = input.trim();
+        let mut m = Map::new();
+        m.insert("forget_password".to_string(), json!(false));
+        m.insert("code_type".to_string(), json!("mobile"));
+        m.insert("code".to_string(), json!(code));
+
+        let resp = self
+            .request::<RespLogin>(ApiName::LoginEmail, Some(m))
+            .await?;
+        match resp.code {
+            0 => Ok(resp.data.unwrap().url),
+            _ => Err(Error::Error(format!(
+                "failed to login with email code {}: {}",
+                code,
+                resp.message.unwrap()
+            ))),
         }
     }
 
@@ -512,6 +638,21 @@ impl Client {
     async fn handle_logout_err(&mut self, msg: String) -> Error {
         self.change_state(State::Init).await;
         Error::Error(format!("operation failed because of logout: {}", msg))
+    }
+
+    async fn get_wifi_info(&mut self) -> Result<RespWifiInfo, Error> {
+        let resp = self
+            .request::<RespWifiInfo>(ApiName::WifiInfo, None)
+            .await?;
+        match resp.code {
+            0 => Ok(resp.data.unwrap()),
+            101 => Err(self.handle_logout_err(resp.message.unwrap()).await),
+            _ => Err(Error::Error(format!(
+                "failed to get wifi info with error {}: {}",
+                resp.code,
+                resp.message.unwrap()
+            ))),
+        }
     }
 
     async fn list_vpn(&mut self) -> Result<Vec<RespVpnInfo>, Error> {

@@ -31,6 +31,7 @@ pub struct Config {
     pub code: Option<String>,
     pub device_name: Option<String>,
     pub device_id: Option<String>,
+    pub otp_uri: Option<String>,
     pub public_key: Option<String>,
     pub private_key: Option<String>,
     pub server: Option<String>,

@@ -43,8 +43,25 @@ pub struct RespCorplinkLoginMethod {
 }
 
 #[derive(serde::Deserialize)]
+pub struct RespPasswordpLoginMethod {
+    pub auth: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
 pub struct RespLogin {
     pub url: String,
+}
+
+
+#[derive(serde::Deserialize)]
+pub struct RespWifiInfo {
+    pub employee_setting: RespWifiInfoEmployeeSetting,
+}
+
+#[derive(serde::Deserialize)]
+pub struct RespWifiInfoEmployeeSetting {
+    pub account: String,
+    pub password: String,
 }
 
 #[derive(serde::Deserialize)]
