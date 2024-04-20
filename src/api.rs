@@ -17,6 +17,7 @@ const URL_VERIFY_CODE: &str = "{{url}}/api/login/code/verify?os={{os}}&os_versio
 const URL_LOGIN_PASSWORD: &str = "{{url}}/api/login?os={{os}}&os_version={{version}}";
 const URL_LIST_VPN: &str = "{{url}}/api/vpn/list?os={{os}}&os_version={{version}}";
 const URL_GET_WIFI: &str = "{{url}}/api/v1/wifi?os={{os}}&os_version={{version}}";
+const URL_GET_OTP: &str = "{{url}}/api/v2/p/otp?os={{os}}&os_version={{version}}";
 
 const URL_PING_VPN_HOST: &str = "{{url}}/vpn/ping?os={{os}}&os_version={{version}}";
 const URL_FETCH_PEER_INFO: &str = "{{url}}/vpn/conn?os={{os}}&os_version={{version}}";
@@ -33,6 +34,7 @@ pub enum ApiName {
     LoginEmail,
     ListVPN,
     WifiInfo,
+    OtpInfo,
 
     PingVPN,
     ConnectVPN,
@@ -85,6 +87,8 @@ impl ApiUrl {
         api_template.insert(ApiName::LoginPassword, Template::new(URL_LOGIN_PASSWORD));
         api_template.insert(ApiName::ListVPN, Template::new(URL_LIST_VPN));
         api_template.insert(ApiName::WifiInfo, Template::new(URL_GET_WIFI));
+        api_template.insert(ApiName::OtpInfo, Template::new(URL_GET_OTP));
+
         api_template.insert(ApiName::PingVPN, Template::new(URL_PING_VPN_HOST));
         api_template.insert(ApiName::ConnectVPN, Template::new(URL_FETCH_PEER_INFO));
         api_template.insert(ApiName::KeepAliveVPN, Template::new(URL_OPERATE_VPN));
@@ -118,6 +122,7 @@ impl ApiUrl {
             ApiName::LoginPassword => self.api_template[name].render(user_param),
             ApiName::ListVPN => self.api_template[name].render(user_param),
             ApiName::WifiInfo => self.api_template[name].render(user_param),
+            ApiName::OtpInfo => self.api_template[name].render(user_param),
 
             ApiName::PingVPN => self.api_template[name].render(vpn_param),
             ApiName::ConnectVPN => self.api_template[name].render(vpn_param),

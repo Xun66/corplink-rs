@@ -259,7 +259,7 @@ impl Client {
             .request::<RespLogin>(ApiName::TpsTokenCheck, Some(m))
             .await?;
         match resp.code {
-            0 => Ok(resp.data.unwrap().url),
+            0 => Ok(resp.data.unwrap().result),
             _ => {
                 let msg = resp.message.unwrap();
                 Err(Error::Error(msg))
@@ -563,7 +563,7 @@ impl Client {
             .request::<RespLogin>(ApiName::LoginEmail, Some(m))
             .await?;
         match resp.code {
-            0 => Ok(resp.data.unwrap().url),
+            0 => Ok(resp.data.unwrap().result),
             _ => Err(Error::Error(format!(
                 "failed to login with otp code {}: {}",
                 otp,
@@ -589,10 +589,30 @@ impl Client {
             .request::<RespLogin>(ApiName::LoginEmail, Some(m))
             .await?;
         match resp.code {
-            0 => Ok(resp.data.unwrap().url),
+            0 => {
+                // get otp info
+                let otp_url = self.get_otp_info().await?;
+                Ok(otp_url)
+            },
             _ => Err(Error::Error(format!(
                 "failed to login with email code {}: {}",
                 code,
+                resp.message.unwrap()
+            ))),
+        }
+    }
+
+    async fn get_otp_info(&mut self) -> Result<String, Error> {
+        log::info!("try to get otp info");
+        let m = Map::new();
+        let resp = self
+            .request::<RespOtpInfo>(ApiName::OtpInfo, Some(m))
+            .await?;
+        match resp.code {
+            0 => Ok(resp.data.unwrap().url),
+            _ => Err(Error::Error(format!(
+                "failed to get otp info with error {}: {}",
+                resp.code,
                 resp.message.unwrap()
             ))),
         }
@@ -626,7 +646,11 @@ impl Client {
             .request::<RespLogin>(ApiName::LoginEmail, Some(m))
             .await?;
         match resp.code {
-            0 => Ok(resp.data.unwrap().url),
+            0 => {
+                // get otp info
+                let otp_url = self.get_otp_info().await?;
+                Ok(otp_url)
+            },
             _ => Err(Error::Error(format!(
                 "failed to login with email code {}: {}",
                 code,

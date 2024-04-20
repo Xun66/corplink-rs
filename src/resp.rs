@@ -49,9 +49,13 @@ pub struct RespPasswordpLoginMethod {
 
 #[derive(serde::Deserialize)]
 pub struct RespLogin {
-    pub url: String,
+    pub result: String,
 }
 
+#[derive(serde::Deserialize)]
+pub struct RespOtpInfo {
+    pub url: String
+}
 
 #[derive(serde::Deserialize)]
 pub struct RespWifiInfo {
